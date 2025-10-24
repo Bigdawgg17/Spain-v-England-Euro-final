@@ -1,0 +1,83 @@
+from statsbombpy import sb
+import pandas as pd
+from mplsoccer import VerticalPitch,Pitch,Sbopen
+import matplotlib.pyplot as plt
+
+matches = sb.matches(competition_id=55, season_id=282)
+
+events = sb.events(match_id=3943043)
+events
+
+parser = Sbopen()
+df, related, freeze, tactics = parser.event(3943043)
+df
+
+df = df[df['team_name']=="England"]
+passes = df[df['type_name']=='Pass']
+passes = passes[['id','minute','player_id','player_name','x','y','end_x', 'end_y','pass_recipient_id','pass_recipient_name','outcome_id','outcome_name']]
+
+passes
+
+passes['outcome_name'].unique()
+
+successful=passes[passes['outcome_name'].isnull()]
+successful
+
+subs = df[df['type_name']=='Substitution']
+subs = subs['minute']
+firstSub=subs.min()
+firstSub
+
+successful = successful[successful['minute']<firstSub]
+successful
+
+df_lineup = parser.lineup(3943043)
+jersey_data=df_lineup[['player_id','jersey_number']]
+jersey_data
+
+successful= pd.merge(successful,jersey_data,on='player_id')
+successful.rename(columns={'jersey_number':'passer'},inplace=True)
+successful
+
+jersey_data.rename(columns={'player_id':'pass_recipient_id'},inplace=True)
+successful = pd.merge(successful,jersey_data, on='pass_recipient_id')
+successful.rename(columns={'jersey_number':'recipient'},inplace=True)
+successful
+
+average_locations = successful.groupby('passer').agg({'x':['mean'],'y':['mean','count']})
+average_locations.columns = ['x','y','count']
+average_locations
+
+pass_between = successful.groupby(['passer','recipient']).id.count().reset_index()
+pass_between.rename({'id':'pass_count'},axis='columns',inplace=True)
+pass_between
+
+pass_between = pd.merge(pass_between, average_locations, on='passer')
+pass_between
+
+average_locations = average_locations.rename_axis('recipient')
+pass_between = pd.merge(pass_between, average_locations, on='recipient',suffixes=['','_end'])
+pass_between
+
+average_locations = average_locations.rename_axis('recipient')
+pass_between = pd.merge(pass_between, average_locations, on='recipient',suffixes=['','_end'])
+pass_between
+
+pitch = Pitch(pitch_color='#FFFFFF', line_color='#B6BBC4')
+fig, ax = pitch.draw(figsize=(8, 6), constrained_layout=True, tight_layout=False)
+
+fig.set_facecolor('#FFFFFF')
+
+arrows = pitch.arrows(1.2 * pass_between.x, 0.8 * pass_between.y, 1.2 * pass_between.x_end, 0.8 * pass_between.y_end, ax=ax,color='red', alpha=0.4,width=3)
+
+nodes = pitch.scatter(1.2 * average_locations.x, 0.8 * average_locations.y, s=20*average_locations['count'].values, color='white', edgecolors='#a6aab3', linewidth=2, alpha=1, zorder=1, ax=ax)
+
+for index, row in average_locations.iterrows():
+    pitch.annotate(index, xy=(1.2 * row.x, 0.8 * row.y), c='#161A30',fontweight='bold', va='center', ha='center', size=8, ax=ax)
+
+ax.set_title('England Pass Network', color='red', va='center', fontsize=12, fontweight='bold', pad=20, loc='center')
+ax.annotate('2024 Euro final', xy=(0.5, 1), xytext=(0, 0),
+           xycoords='axes fraction', textcoords='offset points',
+           fontsize=10, color='#0E2954', va='top', ha='center')
+plt.show()
+
